@@ -106,6 +106,7 @@ ALLOWED_CLEAN_OPTIONS = {
     "nfkc": bool,
     "aggressive_homoglyphs": bool,
     "normalize_spaces": bool,
+    "layer_a_only": bool,
     "keep_non_ai_metadata": bool,
     "also_layer_a_text": bool,
     "remove_pixel": str,
@@ -1252,17 +1253,19 @@ def _clean_payload(data: bytes, name: str, options: dict[str, Any]) -> dict[str,
                 aggressive_homoglyphs=bool(options.get("aggressive_homoglyphs")),
                 normalize_spaces=bool(options.get("normalize_spaces", True)),
             )
-            # Layer B is a required step for text cleaning: always apply the
-            # default (or per-request) rewrite strategy and reject (400) when no
-            # strategy is available or a step's backend/model can't run.
-            strategy = options.get("strategy") or _DEFAULT_STRATEGY
-            if not strategy:
-                raise ValueError(
-                    "Layer B rewrite is required for text cleaning; configure a "
-                    "default strategy (config/clean_strategy.json) or pass "
-                    "options.strategy"
-                )
-            cleaned, layer_b = _apply_layer_b(cleaned, strategy, options)
+            if options.get("layer_a_only"):
+                layer_b = {"applied": False, "reason": "layer_a_only"}
+            else:
+                # Layer B is a required step for text cleaning unless explicitly
+                # disabled for deterministic Layer A-only use.
+                strategy = options.get("strategy") or _DEFAULT_STRATEGY
+                if not strategy:
+                    raise ValueError(
+                        "Layer B rewrite is required for text cleaning; configure a "
+                        "default strategy (config/clean_strategy.json) or pass "
+                        "options.strategy, or set options.layer_a_only to true"
+                    )
+                cleaned, layer_b = _apply_layer_b(cleaned, strategy, options)
             if detect_after:
                 detector_reports["after"] = run_text_detectors(cleaned)
             cleaned_bytes = cleaned.encode("utf-8", errors="surrogateescape")
@@ -1448,8 +1451,27 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _respond_web_ui(self) -> None:
+        try:
+            data = (Path(__file__).resolve().parent / "web" / "index.html").read_bytes()
+        except OSError as e:
+            self.log_error("failed to read web UI: %r", e)
+            self._respond(
+                HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": "web UI unavailable"}
+            )
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
+        if path == "/":
+            self._respond_web_ui()
+            return
         if not self._authorized():
             self._respond(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"})
             return

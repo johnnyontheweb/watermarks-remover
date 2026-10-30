@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pulisci testo - watermarks-remover</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font: 16px/1.5 system-ui, sans-serif;
+    }
+    body {
+      box-sizing: border-box;
+      margin: 0 auto;
+      max-width: 860px;
+      padding: 2rem 1rem;
+    }
+    h1 { margin-bottom: .25rem; }
+    p { color: GrayText; }
+    label { display: block; font-weight: 600; margin: 1.25rem 0 .4rem; }
+    textarea {
+      box-sizing: border-box;
+      display: block;
+      font: inherit;
+      min-height: 12rem;
+      padding: .75rem;
+      resize: vertical;
+      width: 100%;
+    }
+    input {
+      box-sizing: border-box;
+      font: inherit;
+      padding: .5rem;
+      width: 100%;
+    }
+    button {
+      cursor: pointer;
+      font: inherit;
+      margin-top: 1rem;
+      padding: .6rem 1rem;
+    }
+    #status { min-height: 1.5em; }
+    #result { margin-top: 1rem; }
+    #result[hidden] { display: none; }
+    .note { font-size: .95rem; }
+    .check {
+      align-items: center;
+      display: flex;
+      font-weight: 400;
+      gap: .5rem;
+    }
+    .check input { width: auto; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Pulisci testo</h1>
+    <p class="note">
+      La modalità predefinita riscrive il testo con Ollama locale
+      (<code>lfm3-vl</code>) e rimuove i marcatori Unicode invisibili.
+      La riscrittura cambia la formulazione, ma non garantisce la rimozione di
+      ogni watermark statistico.
+    </p>
+    <form id="clean-form">
+      <label for="source">Testo da pulire</label>
+      <textarea id="source" required placeholder="Incolla qui il testo"></textarea>
+      <label for="api-key">Chiave del servizio (solo se configurata)</label>
+      <input id="api-key" type="password" autocomplete="off">
+      <label class="check">
+        <input id="layer-a-only" type="checkbox">
+        Solo pulizia deterministica, senza riscrittura LLM
+      </label>
+      <button id="submit" type="submit">Riscrivi e pulisci</button>
+    </form>
+    <p id="status" role="status" aria-live="polite"></p>
+    <section id="result" hidden>
+      <label for="cleaned">Testo pulito</label>
+      <textarea id="cleaned" readonly></textarea>
+      <p id="summary" class="note"></p>
+      <button id="copy" type="button">Copia risultato</button>
+    </section>
+  </main>
+  <script>
+    const form = document.querySelector("#clean-form");
+    const source = document.querySelector("#source");
+    const apiKey = document.querySelector("#api-key");
+    const layerAOnly = document.querySelector("#layer-a-only");
+    const status = document.querySelector("#status");
+    const result = document.querySelector("#result");
+    const cleaned = document.querySelector("#cleaned");
+    const summary = document.querySelector("#summary");
+    const submit = document.querySelector("#submit");
+
+    function toBase64(text) {
+      const bytes = new TextEncoder().encode(text);
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+      }
+      return btoa(binary);
+    }
+
+    function fromBase64(encoded) {
+      const binary = atob(encoded);
+      const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    }
+
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      result.hidden = true;
+      status.textContent = "Pulizia in corso...";
+      submit.disabled = true;
+      try {
+        const headers = { "Content-Type": "application/json" };
+        if (apiKey.value) headers.Authorization = `Bearer ${apiKey.value}`;
+        const options = layerAOnly.checked ? { layer_a_only: true } : {};
+        const response = await fetch("/clean", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            name: "testo.txt",
+            file: toBase64(source.value),
+            options
+          })
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || `Errore HTTP ${response.status}`);
+        }
+        cleaned.value = fromBase64(payload.cleaned);
+        const removed = payload.report?.stats?.removed_count ?? 0;
+        const rewritten = payload.report?.layer_b?.steps?.length > 0;
+        summary.textContent = rewritten
+          ? `Completato con riscrittura Ollama. Marcatori Unicode rimossi: ${removed}. La riscrittura è automatica ma va riletta per verificare che il significato sia preservato.`
+          : `Completato. Marcatori Unicode rimossi: ${removed}. Nessuna riscrittura LLM eseguita.`;
+        result.hidden = false;
+        status.textContent = "Testo pulito.";
+      } catch (error) {
+        status.textContent = `Errore: ${error.message}`;
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    document.querySelector("#copy").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(cleaned.value);
+        status.textContent = "Risultato copiato.";
+      } catch {
+        cleaned.focus();
+        cleaned.select();
+        status.textContent = "Seleziona e copia il testo pulito.";
+      }
+    });
+  </script>
+</body>
+</html>

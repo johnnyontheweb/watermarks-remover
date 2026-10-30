@@ -111,6 +111,16 @@ def test_health(conn):
     assert "version" in body
 
 
+def test_web_ui(conn):
+    conn.request("GET", "/")
+    response = conn.getresponse()
+    body = response.read().decode("utf-8")
+    assert response.status == 200
+    assert response.getheader("Content-Type").startswith("text/html")
+    assert "Riscrivi e pulisci" in body
+    assert "Solo pulizia deterministica" in body
+
+
 def test_capabilities(conn):
     status, body = _get(conn, "/capabilities")
     assert status == 200
@@ -182,6 +192,27 @@ def test_clean_text_roundtrip(conn):
     cleaned = base64.b64decode(body["cleaned"]).decode("utf-8")
     assert cleaned == "HelloWorld!"
     assert body["report"]["stats"]["removed_count"] == 2
+
+
+def test_clean_text_layer_a_only_does_not_call_layer_b(conn, monkeypatch):
+    monkeypatch.setattr(
+        server,
+        "_apply_layer_b",
+        lambda *args: pytest.fail("Layer B should not run in Layer A-only mode"),
+    )
+    data = "Hello\u200bWorld\u00ad!".encode("utf-8")
+    status, body = _post(
+        conn,
+        "/clean",
+        {
+            "file": _b64(data),
+            "name": "note.txt",
+            "options": {"layer_a_only": True},
+        },
+    )
+    assert status == 200
+    assert base64.b64decode(body["cleaned"]).decode("utf-8") == "HelloWorld!"
+    assert body["report"]["layer_b"] == {"applied": False, "reason": "layer_a_only"}
 
 
 def test_clean_text_accepts_style_option(conn):

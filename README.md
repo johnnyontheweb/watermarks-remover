@@ -89,6 +89,11 @@ with `make serve` before using the skill (or on Windows without `make`, run
 `WATERMARKS_SERVICE_URL` (default `http://127.0.0.1:8765`), checks `/health`,
 and calls the existing `/inspect` and `/clean` endpoints. If the service
 requires an API key, set `WATERMARKS_SERVER_API_KEY` for the client.
+With the service running, open `http://127.0.0.1:8765/` for the local text
+cleaning page. The VS Code debug configuration uses a local Ollama backend
+(`lfm3-vl:latest`) for Layer B rewrites without an API key; start Ollama and
+ensure that model is installed first. The page also offers deterministic
+Layer A-only cleaning. Rewrites are best-effort and should be reviewed.
 `clean-user-facing-text` is
 self-contained and does not need the service.
 

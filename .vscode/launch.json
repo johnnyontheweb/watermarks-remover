@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug watermarks-remover server",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/service/scripts/server.py",
+      "args": [
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8765"
+      ],
+      "env": {
+        "WATERMARKS_REWRITE_BACKEND": "ollama",
+        "WATERMARKS_REWRITE_BASE_URL": "http://127.0.0.1:11434",
+        "WATERMARKS_REWRITE_MODEL": "lfm3-vl:latest"
+      },
+      "console": "integratedTerminal"
+    }
+  ]
+}

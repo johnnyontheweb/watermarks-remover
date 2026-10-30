@@ -4,6 +4,8 @@
 /*
 !/.claude-plugin/
 !/.claude-plugin/**
+!/.vscode/
+!/.vscode/**
 !/hooks/
 !/hooks/**
 !/.github/
